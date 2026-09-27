@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Test — 8 cartes</title>
+<style>
+:root{--bg:#151719;--panel:#202326;--line:#3a3d40;--text:#eee;--muted:#999}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Georgia,serif}
+header{text-align:center;padding:24px 16px 14px}
+h1{margin:0 0 7px;font-size:28px}.sub{color:#aaa;font-family:system-ui,sans-serif;font-size:14px}
+main{width:min(1100px,94vw);margin:auto;padding:10px 0 40px}
+.instructions{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:0 0 18px;font-family:system-ui,sans-serif;color:#cfcfcf}
+.board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;background:#101112;padding:14px;border-radius:18px;border:1px solid #303235}
+.slot{aspect-ratio:567/465;border:2px dashed #50545a;border-radius:10px;position:relative;overflow:hidden;background:#050505}
+.slot.empty:after{content:"DÉPOSEZ UNE CARTE ICI";position:absolute;inset:0;display:grid;place-items:center;color:#777;font:700 12px system-ui,sans-serif;letter-spacing:.08em}
+.anchor img,.placed img{width:100%;height:100%;object-fit:cover;display:block}
+.pos{position:absolute;left:8px;top:7px;z-index:4;background:rgba(0,0,0,.72);border-radius:6px;padding:3px 7px;font:700 12px system-ui,sans-serif;color:#ddd}
+.cardbank{margin-top:24px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+.cardbank h2{margin:0 0 12px;font-size:18px}
+.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.card{background:#292d30;border:1px solid #484c50;border-radius:10px;padding:6px;cursor:grab;transition:.15s;position:relative}
+.card:hover{transform:translateY(-2px);border-color:#777}
+.card.dragging{opacity:.4}
+.card img{width:100%;aspect-ratio:567/465;object-fit:cover;border-radius:6px;display:block}
+.cardname{text-align:center;font:700 12px system-ui,sans-serif;color:#ccc;padding:6px 2px 3px}
+.actions{text-align:center;margin:20px 0}
+button{font:800 15px system-ui,sans-serif;border:0;border-radius:9px;padding:13px 26px;cursor:pointer;background:#eee;color:#171717}
+button.secondary{background:#333;color:#ddd;margin-left:8px}
+#result{display:none;margin:15px auto 0;padding:14px;border-radius:10px;max-width:650px;font:700 15px system-ui,sans-serif}
+.ok{display:block!important;background:#173a23;border:1px solid #36784b;color:#a9edbb}
+.no{display:block!important;background:#411e1e;border:1px solid #754040;color:#ffb5b5}
+@media(max-width:850px){.cards{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:560px){.board{gap:8px;padding:8px}.cards{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+<h1>Le test des 8 cartes</h1>
+<div class="sub">Placez les six cartes mobiles entre les deux débuts de chapitre.</div>
+</header>
+<main>
+<div class="instructions">
+<strong>Règle :</strong> la pioche et les cordons de rideaux sont fixes. Faites glisser les six autres images sur les emplacements noirs, puis appuyez sur <strong>VALIDER</strong>.
+</div>
+
+<div class="board" id="board"></div>
+
+<div class="actions">
+<button onclick="validate()">VALIDER</button>
+<button class="secondary" onclick="resetGame()">RÉINITIALISER</button>
+<div id="result"></div>
+</div>
+
+<section class="cardbank">
+<h2>Cartes disponibles</h2>
+<div class="cards" id="cards"></div>
+</section>
+</main>
+
+<script>
+/*
+  POSITIONS DU PLATEAU :
+  1 = Pioche (fixe)
+  2 = emplacement noir
+  3 = emplacement noir
+  4 = emplacement noir
+  5 = Cordons de rideaux (fixe)
+  6 = emplacement noir
+  7 = emplacement noir
+  8 = emplacement noir
+
+  IMPORTANT :
+  La solution est volontairement facile à modifier ici.
+  Remplace les six valeurs de SOLUTION par l'identifiant de la carte
+  qui doit se trouver à chaque position.
+*/
+const SOLUTION = {
+  2: "carte2",
+  3: "carte3",
+  4: "carte4",
+  6: "carte6",
+  7: "carte7",
+  8: "carte8"
+};
+
+const cards = [
+  ["carte2","images/carte2.jpg","Carte A"],
+  ["carte3","images/carte3.jpg","Carte B"],
+  ["carte4","images/carte4.jpg","Carte C"],
+  ["carte6","images/carte6.jpg","Carte D"],
+  ["carte7","images/carte7.jpg","Carte E"],
+  ["carte8","images/carte8.jpg","Carte F"]
+];
+
+const board=document.getElementById("board");
+const cardsEl=document.getElementById("cards");
+let dragged=null;
+
+function createCard(id,src,name){
+  const el=document.createElement("div");
+  el.className="card"; el.draggable=true; el.dataset.id=id;
+  el.innerHTML=`<img src="${src}" alt="${name}"><div class="cardname">${name}</div>`;
+  el.addEventListener("dragstart",e=>{
+    dragged=id; el.classList.add("dragging");
+    e.dataTransfer.setData("text/plain",id);
+  });
+  el.addEventListener("dragend",()=>el.classList.remove("dragging"));
+  return el;
+}
+
+function createSlot(pos){
+  const slot=document.createElement("div");
+  slot.className="slot empty"; slot.dataset.pos=pos;
+  slot.innerHTML=`<span class="pos">${pos}</span>`;
+  slot.addEventListener("dragover",e=>{e.preventDefault();slot.style.borderColor="#ddd"});
+  slot.addEventListener("dragleave",()=>slot.style.borderColor="");
+  slot.addEventListener("drop",e=>{
+    e.preventDefault();slot.style.borderColor="";
+    const id=e.dataTransfer.getData("text/plain");
+    if(!id)return;
+
+    // Si la carte est déjà posée ailleurs, on la retire.
+    document.querySelectorAll(".slot .card").forEach(c=>{
+      if(c.dataset.id===id)c.remove();
+    });
+
+    // Si l'emplacement contient déjà une carte, elle retourne dans la réserve.
+    const old=slot.querySelector(".card");
+    if(old){
+      cardsEl.appendChild(old);
+    }
+
+    const data=cards.find(x=>x[0]===id);
+    const card=createCard(data[0],data[1],data[2]);
+    slot.classList.remove("empty");
+    slot.appendChild(card);
+  });
+  return slot;
+}
+
+// Positions dans l'ordre visuel du schéma : 1,5 sur la première ligne,
+// puis 2,6 / 3,7 / 4,8.
+[
+  {pos:1,anchor:"images/chapitre1.jpg"},
+  {pos:5,anchor:"images/chapitre2.jpg"},
+  {pos:2},{pos:6},{pos:3},{pos:7},{pos:4},{pos:8}
+].forEach(x=>{
+  const slot=createSlot(x.pos);
+  if(x.anchor){
+    slot.classList.remove("empty","slot");
+    slot.className="slot anchor";
+    slot.innerHTML=`<span class="pos">${x.pos}</span><img src="${x.anchor}">`;
+  }
+  board.appendChild(slot);
+});
+
+cards.forEach(x=>cardsEl.appendChild(createCard(x[0],x[1],x[2])));
+
+function validate(){
+  const result=document.getElementById("result");
+  const movable=[2,3,4,6,7,8];
+  const missing=movable.filter(p=>!document.querySelector(`.slot[data-pos="${p}"] .card`));
+  if(missing.length){
+    result.className="no";
+    result.textContent="Il reste des emplacements à remplir : "+missing.join(", ")+".";
+    return;
+  }
+  const wrong=movable.filter(p=>{
+    const id=document.querySelector(`.slot[data-pos="${p}"] .card`).dataset.id;
+    return id!==SOLUTION[p];
+  });
+  if(!wrong.length){
+    result.className="ok";
+    result.textContent="✓ Bravo ! La séquence est correcte.";
+  }else{
+    result.className="no";
+    result.textContent="✕ Ce n'est pas encore le bon ordre. Écoutez / observez les indices et réessayez.";
+  }
+}
+
+function resetGame(){
+  document.querySelectorAll(".slot .card").forEach(c=>cardsEl.appendChild(c));
+  document.querySelectorAll(".slot").forEach(s=>{
+    if(!s.classList.contains("anchor"))s.classList.add("empty");
+  });
+  const r=document.getElementById("result");r.className="";r.style.display="none";
+}
+</script>
+</body>
+</html>
